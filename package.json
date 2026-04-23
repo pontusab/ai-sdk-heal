@@ -1,0 +1,74 @@
+{
+  "name": "ai-sdk-heal",
+  "version": "0.2.0",
+  "description": "Heal broken Vercel AI SDK message arrays before they hit the provider. Fixes orphaned tool calls, missing reasoning signatures, invalid tool names, and other provider rejections.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Pontus Abrahamsson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pontusab/ai-sdk-heal.git"
+  },
+  "homepage": "https://github.com/pontusab/ai-sdk-heal#readme",
+  "bugs": {
+    "url": "https://github.com/pontusab/ai-sdk-heal/issues"
+  },
+  "keywords": [
+    "ai",
+    "ai-sdk",
+    "vercel",
+    "anthropic",
+    "openai",
+    "gemini",
+    "tool-calls",
+    "messages",
+    "sanitize",
+    "repair",
+    "heal",
+    "middleware",
+    "llm",
+    "agent"
+  ],
+  "sideEffects": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/test",
+    "check": "bun run typecheck && bun test src/test",
+    "prepublishOnly": "bun run check && bun run build"
+  },
+  "peerDependencies": {
+    "ai": ">=5.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "ai": "^6.0.141",
+    "tsup": "^8.5.1",
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
