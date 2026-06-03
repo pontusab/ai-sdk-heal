@@ -1,5 +1,7 @@
 # ai-sdk-heal
 
+![ai-sdk-heal](./assets/og-header.png)
+
 Keep your AI SDK conversations valid. `ai-sdk-heal` normalizes message arrays so they satisfy each provider's structural rules — pairing tool calls with results, coercing tool inputs to objects, preserving reasoning blocks correctly, and more.
 
 One function. Pure. Idempotent. Safe on the hot path and on persisted history.
@@ -38,6 +40,34 @@ Agents, retries, and persisted conversations make it easy to drift out of those 
 Every change is captured in the `repairs` array so you can log it, alert on it, or surface it in admin tooling.
 
 Each rule maps to a documented scenario tracked upstream: [#8516](https://github.com/vercel/ai/issues/8516), [#9141](https://github.com/vercel/ai/issues/9141), [#11602](https://github.com/vercel/ai/issues/11602), [#13430](https://github.com/vercel/ai/issues/13430), [#13645](https://github.com/vercel/ai/issues/13645), [#14259](https://github.com/vercel/ai/issues/14259), [#8379](https://github.com/vercel/ai/issues/8379), [#7729](https://github.com/vercel/ai/issues/7729), [#12504](https://github.com/vercel/ai/issues/12504).
+
+## Where this fits in the pipeline
+
+`ai-sdk-heal` operates on `ModelMessage[]` — the array you pass to `generateText` / `streamText`. If you persist conversations as `UIMessage[]` (the React/UI shape) and call `convertToModelMessages`, that conversion sits *before* `healMessages`:
+
+```
+DB / state                       AI SDK                          ai-sdk-heal                provider
+──────────                       ──────                          ───────────                ────────
+UIMessage[] ──convertToModelMessages──> ModelMessage[] ──healMessages──> ModelMessage[] ──> Anthropic / OpenAI / …
+                       │                                  │
+                       └─ pass `ignoreIncompleteToolCalls: true`
+                          to drop UI-level orphans during conversion
+```
+
+The two layers solve different problems:
+
+- `convertToModelMessages({ ignoreIncompleteToolCalls: true })` filters `state: "input-available"` UI parts that haven't received a result yet. Use it for *live* UI message arrays where the user might have aborted mid-tool-call.
+- `healMessages` repairs anything that survives conversion or that lives only in `ModelMessage[]` form: missing reasoning signatures, invalid tool names, malformed tool inputs, duplicate tool results, OpenAI Responses ordering, persisted DB rows from older SDK versions, and the orphans that `pruneMessages` *creates* ([#13430](https://github.com/vercel/ai/issues/13430), [#12504](https://github.com/vercel/ai/issues/12504)).
+
+A defense-in-depth setup combines both:
+
+```ts
+const modelMessages = await convertToModelMessages(uiMessages, {
+  ignoreIncompleteToolCalls: true,
+});
+const { messages } = healMessages(modelMessages, { provider: "anthropic" });
+await streamText({ model, messages });
+```
 
 ## Install
 
@@ -134,6 +164,23 @@ if (!valid) {
 }
 ```
 
+### Heal after `pruneMessages`
+
+`pruneMessages` (built into the AI SDK) trims reasoning and tool turns to fit a context window, but in the process it can leave orphaned `tool_use` blocks ([#13430](https://github.com/vercel/ai/issues/13430), [#12504](https://github.com/vercel/ai/issues/12504)). Running `healMessages` after pruning fixes the structure the prune left behind:
+
+```ts
+import { pruneMessages } from "ai";
+import { healMessages } from "ai-sdk-heal";
+
+const pruned = pruneMessages({
+  messages: history,
+  reasoning: "before-last-message",
+  toolCalls: "before-last-message",
+});
+const { messages } = healMessages(pruned, { provider: "anthropic" });
+await streamText({ model, messages });
+```
+
 ### Heal persisted conversations
 
 Because `healMessages` is idempotent — running it twice produces the same result — it's safe to apply on every read, or as a one-shot migration:
@@ -188,6 +235,12 @@ See `Policy` in the types for every option.
 - **Provider-aware.** Shared rules run for every provider; provider-specific rules (Anthropic, OpenAI) layer on top.
 - **Auditable.** Every change returns a `Repair` record with the rule name, message index, and reason.
 - **Composable.** Individual rules are exported so you can build your own pipeline.
+
+### Notes & caveats
+
+- **Tool-name collisions after sanitization.** If two distinct invalid tool names normalise to the same string (e.g. `"foo bar"` and `"foo!bar"` both become `"foo_bar"`), they keep their distinct `toolCallId`s but share a name. The provider still accepts the conversation; the model can disambiguate via the call IDs.
+- **Google / Gemini.** Shared rules apply automatically. We don't ship a Google-specific signature rule because `@ai-sdk/google` (≥ the May 2026 release) now auto-injects `skip_thought_signature_validator` for Gemini 3 tool-call replays at conversion time. Replicating it here would require model-ID detection that `ModelMessage[]` doesn't carry.
+- **Middleware vs. `healMessages`.** `withHealing` runs *after* the SDK's `convertToLanguageModelPrompt`, so it can't repair orphan tool-use (the SDK validates pairing during conversion and throws first). Always run `healMessages` on the message array up-front; use `withHealing` as a defensive second layer for everything that slips through.
 
 ## Related
 

@@ -51,10 +51,13 @@ export function healMiddleware(
     transformParams: async ({ params, type, model }) => {
       const provider = healOptions.provider ?? inferProvider(model);
 
-      // LanguageModelV3Prompt is a structural subset of ModelMessage[] for
-      // the fields the rules care about (text, reasoning, tool-call,
-      // tool-result, providerOptions). The cast is safe for the scope of
-      // healing and we cast back on output.
+      // SAFETY: LanguageModelV3Prompt is a structural subset of
+      // ModelMessage[] for the fields the rules care about (text, reasoning,
+      // tool-call, tool-result, providerOptions). If a future SDK release
+      // changes that shape, fall back to passing the prompt through
+      // unchanged rather than misinterpreting it.
+      if (!isHealablePrompt(params.prompt)) return params;
+
       const asMessages = params.prompt as unknown as ModelMessage[];
       const { messages, repairs }: HealResult = healMessages(asMessages, {
         ...healOptions,
@@ -112,4 +115,29 @@ export function withHealing(
     model,
     middleware: healMiddleware({ ...options, provider }),
   });
+}
+
+/**
+ * Cheap structural check: looks like an array of role-shaped messages where
+ * the assistant/tool/user/system roles match what our rules expect.
+ *
+ * We deliberately don't deep-validate — that's the rules' job. We just want
+ * to bail to a no-op if the SDK ever changes the prompt shape so radically
+ * that our cast would silently misread it.
+ */
+function isHealablePrompt(prompt: unknown): boolean {
+  if (!Array.isArray(prompt)) return false;
+  for (const m of prompt) {
+    if (!m || typeof m !== "object") return false;
+    const role = (m as { role?: unknown }).role;
+    if (
+      role !== "system" &&
+      role !== "user" &&
+      role !== "assistant" &&
+      role !== "tool"
+    ) {
+      return false;
+    }
+  }
+  return true;
 }

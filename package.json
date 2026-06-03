@@ -63,10 +63,10 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^22.10.1",
-    "ai": "^6.0.141",
+    "@types/node": "^25.9.1",
+    "ai": "^6.0.195",
     "tsup": "^8.5.1",
-    "typescript": "^5.6.3"
+    "typescript": "^6.0.3"
   },
   "publishConfig": {
     "access": "public"

@@ -288,6 +288,26 @@ describe("withHealing — documented limits", () => {
   });
 });
 
+describe("healMiddleware — defensive structural guard", () => {
+  /**
+   * If a future SDK release changes `LanguageModelV3Prompt` so that our
+   * `ModelMessage[]` cast would misread it, the middleware must bail to a
+   * no-op rather than corrupt the prompt. We exercise that path by handing
+   * the middleware a prompt whose roles aren't what we expect.
+   */
+  test("passes the prompt through unchanged when role shape is unrecognized", async () => {
+    const { healMiddleware: mw } = await import("../middleware");
+    const middleware = mw();
+    const exotic = [{ role: "future-thing", content: [{ type: "text", text: "x" }] }];
+    const out = await middleware.transformParams!({
+      type: "generate",
+      params: { prompt: exotic as never } as never,
+      model: { provider: "anthropic" } as never,
+    });
+    expect((out as { prompt: unknown }).prompt).toBe(exotic);
+  });
+});
+
 // ─── helpers ────────────────────────────────────────────────────────────
 
 function collectToolResultIds(prompt: CapturedPrompt): string[] {
